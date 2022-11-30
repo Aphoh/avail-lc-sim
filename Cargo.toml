@@ -1,0 +1,11 @@
+[package]
+name = "avail-lc-sim"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bitvec_simd = "0.20"
+rayon = "1.6"
+rand = {version = "0.8", features = ["small_rng"]}
