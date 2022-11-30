@@ -9,15 +9,15 @@ mod traits;
 struct GridParams256 {}
 impl GridParams for GridParams256 {
     const WIDTH: usize = 256;
-    const HEIGHT: usize = 256;
+    const HEIGHT: usize = 512;
 }
 
 fn main() {
     use rayon::prelude::*;
-    const NUM_EXPERIMENTS: usize = 2_000;
-    const N_CLIENTS: usize = 2_000;
+    const NUM_EXPERIMENTS: usize = 300;
+    const N_CLIENTS: usize = 4_000;
     const N_CLIENTS_CENSORED: usize = (2 * N_CLIENTS) / 3;
-    const SAMPLES_PER_CLIENT: usize = 30;
+    const SAMPLES_PER_CLIENT: usize = 40;
 
     type Grid = Grid1dErasure<GridParams256>;
 
