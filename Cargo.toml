@@ -8,10 +8,12 @@ edition = "2021"
 [dependencies]
 bitvec_simd = "0.20"
 rayon = "1.6"
-rand = {version = "0.8", features = ["small_rng"]}
+rand = { version = "0.8", features = ["small_rng"] }
+csv = "1.1"
+linya = "0.3"
+indicatif = { version = "0.17", features = ["rayon"] }
 
 [profile.release]
 opt-level = 3
 lto = true
 panic = "abort"
-debug = 1

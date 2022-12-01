@@ -114,6 +114,7 @@ impl<P: GridParams> Reconstructable for Grid1dErasure<P> {
         self.grid.and_inplace(&mask)
     }
 
+    #[inline(always)]
     fn merge(self, other: Self) -> Self {
         Self {
             grid: self.grid | other.grid,
