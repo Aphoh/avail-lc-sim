@@ -26,8 +26,7 @@ impl ExperimentConfig {
         let (mask, censor_target) = <Grid1dErasure<P>>::new_mask(&mut thread_rng());
 
         let mut recon_count = 0;
-        // Run 1000 experiments
-        const N_EXPERIMENTS: usize = 100;
+        const N_EXPERIMENTS: usize = 500;
         for _ in 0..N_EXPERIMENTS {
             let censor_iter = (0..self.n_censored).into_par_iter().map_init(
                 || SmallRng::from_entropy(),
@@ -62,7 +61,7 @@ impl ExperimentConfig {
 fn main() -> Result<(), Box<dyn Error>> {
     let mut exps = Vec::new();
     println!("Running Experiments");
-    for n_samples in [20, 30, 40, 50, 60] {
+    for n_samples in [20, 30, 40, 50, 60, 70] {
         for n_clients in (1000..20000).step_by(1000) {
             for n_censored in (0..(n_clients - 1)).step_by(1000) {
                 let e = ExperimentConfig {
@@ -88,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             exp.n_clients.to_string(),
             exp.n_censored.to_string(),
             exp.n_samples.to_string(),
-            prob.to_string(),
+            format!("{:.10}", prob),
         ])?;
     }
     Ok(())
