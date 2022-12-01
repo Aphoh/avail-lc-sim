@@ -14,7 +14,6 @@ pub struct Grid1dErasure<P: GridParams> {
     // the grid stored column wise to make adding along columns more efficient
     grid: BitVec,
     // counts of each column
-    col_counts: Vec<u16>,
     _phantom: PhantomData<P>,
 }
 
@@ -23,15 +22,8 @@ impl<P: GridParams> Grid1dErasure<P> {
         if grid.len() != P::WH {
             return Err(());
         }
-        let mut col_counts = vec![0; P::WIDTH];
-        for i in 0..P::WH {
-            if grid.get_unchecked(i) {
-                col_counts[Self::ind_to_col(i)] += 1;
-            }
-        }
         Ok(Self {
             grid,
-            col_counts,
             _phantom: PhantomData,
         })
     }
@@ -65,7 +57,6 @@ impl<P: GridParams> Display for Grid1dErasure<P> {
             }
             write!(f, "\n")?;
         }
-        self.col_counts.fmt(f)?;
         Ok(())
     }
 }
@@ -78,7 +69,6 @@ impl<P: GridParams> Reconstructable for Grid1dErasure<P> {
     fn new() -> Self {
         Grid1dErasure {
             grid: BitVec::zeros(P::WH),
-            col_counts: vec![0; P::WIDTH],
             _phantom: PhantomData,
         }
     }
@@ -102,7 +92,12 @@ impl<P: GridParams> Reconstructable for Grid1dErasure<P> {
     }
 
     fn can_reconstruct(&self, i: Self::Index) -> bool {
-        self.col_counts[Self::ind_to_col(i)] as usize > (P::HEIGHT / 2)
+        //self.col_counts[Self::ind_to_col(i)] as usize > (P::HEIGHT / 2)
+        let col = Self::ind_to_col(i);
+        let start_ind = Self::coord_to_ind(0, col);
+        let end_ind = Self::coord_to_ind(0, col + 1);
+        let n_has = self.grid.count_ones_before(end_ind) - self.grid.count_ones_before(start_ind);
+        n_has > (P::HEIGHT / 2)
     }
 
     #[inline(always)]
@@ -119,18 +114,9 @@ impl<P: GridParams> Reconstructable for Grid1dErasure<P> {
         self.grid.and_inplace(&mask)
     }
 
-    fn merge(mut self, other: Self) -> Self {
-        // Difference of bitvecs: where we need to update counts
-        let diff = self.grid.clone().not().and_cloned(&other.grid);
-        for i in 0..P::WH {
-            if diff.get_unchecked(i) {
-                self.col_counts[Self::ind_to_col(i)] += 1;
-            }
-        }
-
+    fn merge(self, other: Self) -> Self {
         Self {
             grid: self.grid | other.grid,
-            col_counts: self.col_counts,
             _phantom: PhantomData,
         }
     }
@@ -166,6 +152,7 @@ mod test {
             [false, false, false, false],
             [true, true, true, true],
         ]);
+        assert!(!g1.can_reconstruct(2));
         println!("g1: {}", g1);
         let g2 = from_bool_grid([
             [true, true, true, false],
@@ -173,6 +160,7 @@ mod test {
             [false, false, true, false],
             [true, true, false, false],
         ]);
+        assert!(!g2.can_reconstruct(2));
         println!("g2: {}", g2);
         let res_cmp = from_bool_grid([
             [true, true, true, false],
@@ -180,6 +168,8 @@ mod test {
             [false, false, true, false],
             [true, true, true, true],
         ]);
+        assert!(!g2.can_reconstruct(1));
+        assert!(!g2.can_reconstruct(2));
         let res = g1.merge(g2);
         println!("es: {}", res);
         assert_eq!(res, res_cmp);

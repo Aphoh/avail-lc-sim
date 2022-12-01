@@ -14,7 +14,7 @@ impl GridParams for GridParams256 {
 
 fn main() {
     use rayon::prelude::*;
-    const NUM_EXPERIMENTS: usize = 300;
+    const NUM_EXPERIMENTS: usize = 20;
     const N_CLIENTS: usize = 4_000;
     const N_CLIENTS_CENSORED: usize = (2 * N_CLIENTS) / 3;
     const SAMPLES_PER_CLIENT: usize = 40;

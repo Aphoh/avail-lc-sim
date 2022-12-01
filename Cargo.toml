@@ -9,3 +9,9 @@ edition = "2021"
 bitvec_simd = "0.20"
 rayon = "1.6"
 rand = {version = "0.8", features = ["small_rng"]}
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+debug = 1
