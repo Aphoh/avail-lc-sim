@@ -27,21 +27,6 @@ impl<P: GridParams> Grid1dErasure<P> {
             _phantom: PhantomData,
         })
     }
-
-    #[inline(always)]
-    pub fn coord_to_ind(i: usize, j: usize) -> usize {
-        i + j * P::HEIGHT
-    }
-
-    #[inline(always)]
-    pub fn ind_to_col(z: usize) -> usize {
-        z / P::HEIGHT
-    }
-
-    #[inline(always)]
-    pub fn ind_to_row(z: usize) -> usize {
-        z % P::HEIGHT
-    }
 }
 
 impl<P: GridParams> Display for Grid1dErasure<P> {
@@ -52,7 +37,7 @@ impl<P: GridParams> Display for Grid1dErasure<P> {
                 write!(
                     f,
                     " {} ",
-                    self.grid.get_unchecked(Self::coord_to_ind(i, j)) as u8
+                    self.grid.get_unchecked(P::coord_to_ind(i, j)) as u8
                 )?;
             }
             write!(f, "\n")?;
@@ -82,20 +67,18 @@ impl<P: GridParams> Reconstructable for Grid1dErasure<P> {
         let mut mask = BitVec::zeros(P::WH);
         // Set (0, col)..(n, col) true
         for i in 0..(P::HEIGHT / 2) + 1 {
-            mask.set(Self::coord_to_ind(i, col), true);
+            mask.set(P::coord_to_ind(i, col), true);
         }
-        (mask.not(), Self::coord_to_ind(0, col))
-    }
-
-    fn has_index(&self, i: Self::Index) -> bool {
-        self.grid.get_unchecked(i)
+        (mask.not(), P::coord_to_ind(0, col))
     }
 
     fn can_reconstruct(&self, i: Self::Index) -> bool {
-        //self.col_counts[Self::ind_to_col(i)] as usize > (P::HEIGHT / 2)
-        let col = Self::ind_to_col(i);
-        let start_ind = Self::coord_to_ind(0, col);
-        let end_ind = Self::coord_to_ind(0, col + 1);
+        if self.grid.get_unchecked(i) {
+            return true;
+        }
+        let col = P::ind_to_col(i);
+        let start_ind = P::coord_to_ind(0, col);
+        let end_ind = P::coord_to_ind(0, col + 1);
         let n_has = self.grid.count_ones_before(end_ind) - self.grid.count_ones_before(start_ind);
         n_has > (P::HEIGHT / 2)
     }
@@ -139,7 +122,7 @@ mod test {
         let mut bv = BitVec::zeros(4 * 4);
         for i in 0..4 {
             for j in 0..4 {
-                bv.set(SmallGrid::coord_to_ind(i, j), bools[i][j]);
+                bv.set(SmallGridParams::coord_to_ind(i, j), bools[i][j]);
             }
         }
         SmallGrid::from_bitvec(bv).unwrap()
@@ -150,10 +133,12 @@ mod test {
         let g1 = from_bool_grid([
             [true, true, false, false],
             [false, false, true, true],
-            [false, false, false, false],
+            [false, true, false, false],
             [true, true, true, true],
         ]);
-        assert!(!g1.can_reconstruct(2));
+        assert!(g1.can_reconstruct(SmallGridParams::coord_to_ind(0, 0)));
+        assert!(!g1.can_reconstruct(SmallGridParams::coord_to_ind(1, 0)));
+        assert!(g1.can_reconstruct(SmallGridParams::coord_to_ind(1, 1)));
         println!("g1: {}", g1);
         let g2 = from_bool_grid([
             [true, true, true, false],
@@ -166,13 +151,14 @@ mod test {
         let res_cmp = from_bool_grid([
             [true, true, true, false],
             [false, true, true, true],
-            [false, false, true, false],
+            [false, true, true, false],
             [true, true, true, true],
         ]);
         assert!(!g2.can_reconstruct(1));
         assert!(!g2.can_reconstruct(2));
         let res = g1.merge(g2);
         println!("es: {}", res);
+        println!("cm: {}", res_cmp);
         assert_eq!(res, res_cmp);
     }
 }
