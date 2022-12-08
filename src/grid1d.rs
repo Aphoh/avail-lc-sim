@@ -80,7 +80,7 @@ impl<P: GridParams> Reconstructable for Grid1dErasure<P> {
         let start_ind = P::coord_to_ind(0, col);
         let end_ind = P::coord_to_ind(0, col + 1);
         let n_has = self.grid.count_ones_before(end_ind) - self.grid.count_ones_before(start_ind);
-        n_has > (P::HEIGHT / 2)
+        n_has >= (P::HEIGHT / 2)
     }
 
     #[inline(always)]
@@ -133,32 +133,27 @@ mod test {
         let g1 = from_bool_grid([
             [true, true, false, false],
             [false, false, true, true],
-            [false, true, false, false],
-            [true, true, true, true],
+            [false, false, false, false],
+            [true, false, true, true],
         ]);
         assert!(g1.can_reconstruct(SmallGridParams::coord_to_ind(0, 0)));
-        assert!(!g1.can_reconstruct(SmallGridParams::coord_to_ind(1, 0)));
-        assert!(g1.can_reconstruct(SmallGridParams::coord_to_ind(1, 1)));
-        println!("g1: {}", g1);
+        assert!(!g1.can_reconstruct(SmallGridParams::coord_to_ind(1, 1)));
+        assert!(g1.can_reconstruct(SmallGridParams::coord_to_ind(0, 1)));
         let g2 = from_bool_grid([
             [true, true, true, false],
             [false, true, false, true],
             [false, false, true, false],
             [true, true, false, false],
         ]);
-        assert!(!g2.can_reconstruct(2));
-        println!("g2: {}", g2);
         let res_cmp = from_bool_grid([
             [true, true, true, false],
             [false, true, true, true],
-            [false, true, true, false],
+            [false, false, true, false],
             [true, true, true, true],
         ]);
-        assert!(!g2.can_reconstruct(1));
-        assert!(!g2.can_reconstruct(2));
+        println!("{}", &res_cmp);
         let res = g1.merge(g2);
-        println!("es: {}", res);
-        println!("cm: {}", res_cmp);
+        println!("{}", &res);
         assert_eq!(res, res_cmp);
     }
 }

@@ -73,7 +73,7 @@ fn reconstruct<P: GridParams>(grid: &mut BitVec) -> bool {
     let starting_grid = grid.clone();
     for j in 0..P::WIDTH {
         // if we have enough, reconstruct everything
-        if col_c[j] > P::WIDTH / 2 {
+        if col_c[j] >= P::WIDTH / 2 {
             for i in 0..P::HEIGHT {
                 grid.set(P::coord_to_ind(i, j), true);
             }
@@ -81,7 +81,7 @@ fn reconstruct<P: GridParams>(grid: &mut BitVec) -> bool {
     }
     for i in 0..P::HEIGHT {
         // if we have enough, reconstruct everything
-        if row_c[i] > P::HEIGHT / 2 {
+        if row_c[i] >= P::HEIGHT / 2 {
             for j in 0..P::WIDTH {
                 grid.set(P::coord_to_ind(i, j), true);
             }
@@ -192,25 +192,25 @@ mod test {
     #[test]
     fn test_reconstruct() {
         let mut g1 = from_bool_grid([
-            [true, true, true, false],
             [true, true, false, false],
-            [false, false, false, true],
+            [false, false, true, false],
+            [false, false, false, false],
             [false, false, false, true],
         ]);
         reconstruct::<SmallGridParams>(&mut g1.grid);
         let g2 = from_bool_grid([
             [true, true, true, true],
-            [true, true, false, false],
-            [false, false, false, true],
+            [false, false, true, false],
+            [false, false, false, false],
             [false, false, false, true],
         ]);
         assert_eq!(g1, g2);
         reconstruct::<SmallGridParams>(&mut g1.grid);
         let g3 = from_bool_grid([
             [true, true, true, true],
-            [true, true, false, true],
-            [false, false, false, true],
-            [false, false, false, true],
+            [false, false, true, true],
+            [false, false, true, true],
+            [false, false, true, true],
         ]);
         assert_eq!(g1, g3);
     }
