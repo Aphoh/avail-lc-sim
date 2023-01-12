@@ -3,58 +3,47 @@ use indicatif::ParallelProgressIterator;
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use rayon::prelude::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::error::Error;
-use traits::GridParams;
 
 mod grid1d;
 mod grid2d;
 mod traits;
 
-struct GridParams1d256 {}
-impl GridParams for GridParams1d256 {
-    const WIDTH: usize = 256;
-    const HEIGHT: usize = 512;
-}
-
-struct GridParams2d16 {}
-impl GridParams for GridParams2d16 {
-    const WIDTH: usize = 32;
-    const HEIGHT: usize = 32;
-}
-struct GridParams2d32 {}
-impl GridParams for GridParams2d32 {
-    const WIDTH: usize = 64;
-    const HEIGHT: usize = 64;
-}
-
-struct GridParams2d256 {}
-impl GridParams for GridParams2d256 {
-    const WIDTH: usize = 512;
-    const HEIGHT: usize = 512;
-}
-
 #[derive(Debug)]
 struct ExperimentConfig {
+    n: usize,
+    dims: usize,
     n_clients: usize,
-    n_censored: usize,
+    percent_censored: f64,
     n_samples: usize,
 }
 
 impl ExperimentConfig {
-    fn run<R: Reconstructable>(&self) -> f32 {
-        let (mask, censor_target) = R::new_mask(&mut thread_rng());
+    fn run(&self) -> f32 {
+        if self.dims == 1 {
+            self.run_generic::<Grid1dErasure>()
+        } else if self.dims == 2 {
+            self.run_generic::<Grid2dErasure>()
+        } else {
+            panic!("Not allowed");
+        }
+    }
+
+    fn run_generic<R: Reconstructable>(&self) -> f32 {
+        let (mask, censor_target) = R::new_mask(&mut thread_rng(), self.n);
 
         let mut recon_count = 0;
         const N_EXPERIMENTS: usize = 500;
+        let n_censored = (self.n_clients as f64 * self.percent_censored).floor() as usize;
         for _ in 0..N_EXPERIMENTS {
             let mut rng = SmallRng::from_entropy();
-            let censor_iter = (0..self.n_censored).into_iter().map(|_| {
-                let mut grid = R::new();
+            let censor_iter = (0..n_censored).into_iter().map(|_| {
+                let mut grid = R::new(self.n);
                 grid.sample_exclusion(&mut rng, self.n_samples, &mask);
                 grid
             });
             let mut rng = SmallRng::from_entropy();
-            let honest_iter = (0..self.n_clients - self.n_censored).into_iter().map(|_| {
-                let mut grid = R::new();
+            let honest_iter = (0..self.n_clients - n_censored).into_iter().map(|_| {
+                let mut grid = R::new(self.n);
                 grid.sample(&mut rng, self.n_samples);
                 grid
             });
@@ -69,17 +58,23 @@ impl ExperimentConfig {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut exps = Vec::new();
+    let mut exps: Vec<ExperimentConfig> = Vec::new();
     println!("Running Experiments");
     for n_samples in [10, 15, 20, 25, 30, 35, 40] {
-        for n_clients in (500..10000).step_by(500) {
-            for n_censored in (0..(n_clients - 1)).step_by(500) {
-                let e = ExperimentConfig {
-                    n_clients,
-                    n_censored,
-                    n_samples,
-                };
-                exps.push(e);
+        for n_clients in (50..=1000).step_by(50) {
+            for percent_censored in [0.00, 0.2, 0.4, 0.6, 0.8, 0.9] {
+                for n in [16, 32, 64, 128] {
+                    for dims in [1, 2] {
+                        let e = ExperimentConfig {
+                            n,
+                            dims,
+                            n_clients,
+                            percent_censored,
+                            n_samples,
+                        };
+                        exps.push(e);
+                    }
+                }
             }
         }
     }
@@ -87,14 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let results = exps
         .par_iter()
         .progress_count(exps.len() as u64)
-        .flat_map(|e| {
-            [
-                (1u8, 256, e, e.run::<Grid1dErasure<GridParams1d256>>()),
-                (2u8, 16, e, e.run::<Grid2dErasure<GridParams2d16>>()),
-                (2u8, 32, e, e.run::<Grid2dErasure<GridParams2d32>>()),
-                (2u8, 256, e, e.run::<Grid2dErasure<GridParams2d256>>()),
-            ]
-        })
+        .map(|e| (e, e.run()))
         .collect::<Vec<_>>();
 
     println!("Writing");
@@ -103,17 +91,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         "dims",
         "matrix_size",
         "n_clients",
-        "n_censored",
+        "percent_censored",
         "n_samples",
         "prob",
     ])?;
-    for (dims, matrix_size, exp, prob) in results {
+    for (e, prob) in results {
         writer.write_record(&[
-            dims.to_string(),
-            matrix_size.to_string(),
-            exp.n_clients.to_string(),
-            exp.n_censored.to_string(),
-            exp.n_samples.to_string(),
+            e.dims.to_string(),
+            e.n.to_string(),
+            e.n_clients.to_string(),
+            e.percent_censored.to_string(),
+            e.n_samples.to_string(),
             format!("{:.10}", prob),
         ])?;
     }

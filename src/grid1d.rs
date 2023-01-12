@@ -7,37 +7,46 @@ use std::{
 use bitvec_simd::BitVec;
 use rand::{distributions::Uniform, prelude::Distribution, RngCore};
 
-use crate::traits::{GridParams, Reconstructable};
+use crate::traits::{coord_to_ind, ind_to_col, Reconstructable};
 
 #[derive(Debug, PartialEq)]
-pub struct Grid1dErasure<P: GridParams> {
+pub struct Grid1dErasure {
+    n: usize,
     // the grid stored column wise to make adding along columns more efficient
     grid: BitVec,
-    // counts of each column
-    _phantom: PhantomData<P>,
 }
 
-impl<P: GridParams> Grid1dErasure<P> {
-    pub fn from_bitvec(grid: BitVec) -> Result<Self, ()> {
-        if grid.len() != P::WH {
+impl Grid1dErasure {
+    pub fn from_bitvec(grid: BitVec, n: usize) -> Result<Self, ()> {
+        if grid.len() != 2 * n * n {
             return Err(());
         }
-        Ok(Self {
-            grid,
-            _phantom: PhantomData,
-        })
+        Ok(Self { n, grid })
+    }
+
+    #[inline(always)]
+    fn w(&self) -> usize {
+        self.n
+    }
+    #[inline(always)]
+    fn h(&self) -> usize {
+        2 * self.n
+    }
+    #[inline(always)]
+    fn wh(&self) -> usize {
+        4 * self.n * self.n
     }
 }
 
-impl<P: GridParams> Display for Grid1dErasure<P> {
+impl Display for Grid1dErasure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\n")?;
-        for i in 0..P::HEIGHT {
-            for j in 0..P::WIDTH {
+        for i in 0..self.h() {
+            for j in 0..self.w() {
                 write!(
                     f,
                     " {} ",
-                    self.grid.get_unchecked(P::coord_to_ind(i, j)) as u8
+                    self.grid.get_unchecked(coord_to_ind(i, j, self.h())) as u8
                 )?;
             }
             write!(f, "\n")?;
@@ -47,45 +56,56 @@ impl<P: GridParams> Display for Grid1dErasure<P> {
 }
 
 // Height in P must be even
-impl<P: GridParams> Reconstructable for Grid1dErasure<P> {
+impl Reconstructable for Grid1dErasure {
     type Index = usize;
     type Mask = BitVec;
 
-    fn new() -> Self {
-        Grid1dErasure {
-            grid: BitVec::zeros(P::WH),
-            _phantom: PhantomData,
-        }
+    fn dims() -> usize {
+        1
     }
 
-    fn rand_index<R: RngCore>(rng: &mut R) -> Self::Index {
-        Uniform::new(0, P::WIDTH * P::HEIGHT).sample(rng)
+    fn rand_index<R: RngCore>(rng: &mut R, n: usize) -> Self::Index {
+        let wh = 2 * n * n;
+        Uniform::new(0, wh).sample(rng)
     }
 
-    fn new_mask<R: RngCore>(rng: &mut R) -> (Self::Mask, Self::Index) {
-        let col = Uniform::from(0..P::WIDTH).sample(rng);
-        let mut mask = BitVec::zeros(P::WH);
+    fn new_mask<R: RngCore>(rng: &mut R, n: usize) -> (Self::Mask, Self::Index) {
+        let (w, h) = (n, 2 * n);
+        let col = Uniform::from(0..w).sample(rng);
+        let mut mask = BitVec::zeros(w * h);
         // Set (0, col)..(n, col) true
-        for i in 0..(P::HEIGHT / 2) + 1 {
-            mask.set(P::coord_to_ind(i, col), true);
+        for i in 0..(h / 2) + 1 {
+            mask.set(coord_to_ind(i, col, h), true);
         }
-        (mask.not(), P::coord_to_ind(0, col))
+        (mask.not(), coord_to_ind(0, col, h))
+    }
+
+    fn new(n: usize) -> Self {
+        Grid1dErasure {
+            n,
+            grid: BitVec::zeros(2 * n * n),
+        }
+    }
+
+    fn grid_size(&self) -> usize {
+        // Average of width/height
+        (self.w() + self.h()) / 2
     }
 
     fn can_reconstruct(&self, i: Self::Index) -> bool {
         if self.grid.get_unchecked(i) {
             return true;
         }
-        let col = P::ind_to_col(i);
-        let start_ind = P::coord_to_ind(0, col);
-        let end_ind = P::coord_to_ind(0, col + 1);
+        let col = ind_to_col(i, self.h());
+        let start_ind = coord_to_ind(0, col, self.h());
+        let end_ind = coord_to_ind(0, col + 1, self.h());
         let n_has = self.grid.count_ones_before(end_ind) - self.grid.count_ones_before(start_ind);
-        n_has >= (P::HEIGHT / 2)
+        n_has >= (self.h() / 2)
     }
 
     #[inline(always)]
     fn sample<R: RngCore>(&mut self, rng: &mut R, amount: usize) {
-        let ufm = Uniform::new(0, P::WIDTH * P::HEIGHT);
+        let ufm = Uniform::new(0, self.w() * self.h());
         for _ in 0..amount {
             self.grid.set(ufm.sample(rng), true)
         }
@@ -99,9 +119,10 @@ impl<P: GridParams> Reconstructable for Grid1dErasure<P> {
 
     #[inline(always)]
     fn merge(self, other: Self) -> Self {
+        assert_eq!(self.n, other.n);
         Self {
+            n: self.n,
             grid: self.grid | other.grid,
-            _phantom: PhantomData,
         }
     }
 }
@@ -110,46 +131,33 @@ impl<P: GridParams> Reconstructable for Grid1dErasure<P> {
 mod test {
     use super::*;
 
-    #[derive(Debug, PartialEq)]
-    struct SmallGridParams;
-    impl GridParams for SmallGridParams {
-        const WIDTH: usize = 4;
-        const HEIGHT: usize = 4;
-    }
-    type SmallGrid = Grid1dErasure<SmallGridParams>;
-
-    fn from_bool_grid(bools: [[bool; 4]; 4]) -> SmallGrid {
-        let mut bv = BitVec::zeros(4 * 4);
+    fn from_bool_grid(bools: [[bool; 2]; 4]) -> Grid1dErasure {
+        let mut bv = BitVec::zeros(2 * 4);
         for i in 0..4 {
-            for j in 0..4 {
-                bv.set(SmallGridParams::coord_to_ind(i, j), bools[i][j]);
+            for j in 0..2 {
+                bv.set(coord_to_ind(i, j, 4), bools[i][j]);
             }
         }
-        SmallGrid::from_bitvec(bv).unwrap()
+        Grid1dErasure::from_bitvec(bv, 2).unwrap()
     }
 
     #[test]
     fn test_merge() {
-        let g1 = from_bool_grid([
-            [true, true, false, false],
-            [false, false, true, true],
-            [false, false, false, false],
-            [true, false, true, true],
-        ]);
-        assert!(g1.can_reconstruct(SmallGridParams::coord_to_ind(0, 0)));
-        assert!(!g1.can_reconstruct(SmallGridParams::coord_to_ind(1, 1)));
-        assert!(g1.can_reconstruct(SmallGridParams::coord_to_ind(0, 1)));
+        let g1 = from_bool_grid([[true, true], [false, false], [false, false], [true, false]]);
+        assert!(g1.can_reconstruct(coord_to_ind(0, 0, g1.h())));
+        assert!(!g1.can_reconstruct(coord_to_ind(1, 1, g1.h())));
+        assert!(g1.can_reconstruct(coord_to_ind(0, 1, g1.h())));
         let g2 = from_bool_grid([
-            [true, true, true, false],
-            [false, true, false, true],
-            [false, false, true, false],
-            [true, true, false, false],
+            [true, true],
+            [false, true],
+            [false, false],
+            [true, true],
         ]);
         let res_cmp = from_bool_grid([
-            [true, true, true, false],
-            [false, true, true, true],
-            [false, false, true, false],
-            [true, true, true, true],
+            [true, true],
+            [false, true],
+            [false, false],
+            [true, true],
         ]);
         println!("{}", &res_cmp);
         let res = g1.merge(g2);
