@@ -1,12 +1,13 @@
 use crate::{grid1d::Grid1dErasure, grid2d::Grid2dErasure, traits::Reconstructable};
 use indicatif::ParallelProgressIterator;
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
-use rayon::prelude::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use std::error::Error;
 
 mod grid1d;
 mod grid2d;
 mod traits;
+mod base_grid;
 
 #[derive(Debug)]
 struct ExperimentConfig {

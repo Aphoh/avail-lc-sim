@@ -1,12 +1,11 @@
-use std::{
-    fmt::{Debug, Display},
-    ops::Not,
-};
+use std::fmt::Debug;
 
-use bitvec_simd::BitVec;
 use rand::{distributions::Uniform, prelude::Distribution, RngCore};
 
-use crate::traits::{coord_to_ind, Reconstructable};
+use crate::{
+    base_grid::{Grid, SampleStrategy},
+    traits::Reconstructable,
+};
 
 #[derive(Debug, PartialEq)]
 /// This is a 2d grid with erasure encoding as follows
@@ -20,146 +19,110 @@ pub struct Grid2dErasure {
     // undelying size of grid
     n: usize,
     // the grid stored column wise to make adding along columns more efficient
-    grid: BitVec,
+    grid: Grid,
 }
 
 impl Grid2dErasure {
-    pub fn from_bitvec(grid: BitVec, n: usize) -> Result<Self, ()> {
-        if grid.len() != 4 * n * n {
+    #[cfg(test)]
+    pub fn from_grid(grid: Grid, n: usize) -> Result<Self, ()> {
+        if grid.w() != 2 * n || grid.h() != 2 * n {
             return Err(());
         }
         Ok(Self { n, grid })
     }
-    #[inline(always)]
-    fn w(&self) -> usize {
-        2 * self.n
-    }
-    #[inline(always)]
-    fn h(&self) -> usize {
-        2 * self.n
-    }
-    #[inline(always)]
-    fn wh(&self) -> usize {
-        4 * self.n * self.n
-    }
 }
 
-impl Display for Grid2dErasure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\n")?;
-        for i in 0..self.h() {
-            for j in 0..self.w() {
-                write!(
-                    f,
-                    " {} ",
-                    self.grid.get_unchecked(coord_to_ind(i, j, self.h())) as u8
-                )?;
-            }
-            write!(f, "\n")?;
-        }
-        Ok(())
-    }
-}
-fn col_row_counts(grid: &BitVec, w: usize, h: usize) -> (Vec<usize>, Vec<usize>) {
-    let mut col_counts = vec![0usize; w];
-    let mut row_counts = vec![0usize; h];
-    for i in 0..h {
-        for j in 0..w {
-            if grid.get_unchecked(coord_to_ind(i, j, h)) {
-                col_counts[j] += 1;
-                row_counts[i] += 1;
-            }
-        }
-    }
-    (col_counts, row_counts)
-}
-
-fn reconstruct(grid: &mut BitVec, w: usize, h: usize) -> bool {
-    // count number of cells in each column and row
-    let (col_c, row_c) = col_row_counts(&grid, w, h);
-    // try to reconstruct each column/row
+fn reconstruct(grid: &mut Grid) -> bool {
+    // Make a copy of the grid we started with for comparison later
     let starting_grid = grid.clone();
-    for j in 0..w {
-        // if we have enough, reconstruct everything
-        if col_c[j] >= w / 2 {
-            for i in 0..h {
-                grid.set(coord_to_ind(i, j, h), true);
+    // count number of cells in each column and row
+    let (col_c, row_c) = grid.col_row_counts();
+    // For each column
+    for j in 0..grid.w() {
+        // if we have enough at least n points
+        if col_c[j] >= grid.w() / 2 {
+            // Reconstruct the whole column
+            for i in 0..grid.h() {
+                grid.set(i, j, true);
             }
         }
     }
-    for i in 0..h {
-        // if we have enough, reconstruct everything
-        if row_c[i] >= h / 2 {
-            for j in 0..w {
-                grid.set(coord_to_ind(i, j, h), true);
+    // For each row
+    for i in 0..grid.h() {
+        // if we have enough
+        if row_c[i] >= grid.h() / 2 {
+            // reconstruct everything in the row
+            for j in 0..grid.w() {
+                grid.set(i, j, true);
             }
         }
     }
-    grid != starting_grid
+    // The grid changed if the grid we started with and the
+    // reconstruction we did are not the same
+    grid != &starting_grid
 }
 
 // Height in P must be even
 impl Reconstructable for Grid2dErasure {
-    type Index = usize;
-    type Mask = BitVec;
+    type Index = (usize, usize);
 
     fn new(n: usize) -> Self {
         Grid2dErasure {
             n,
-            grid: BitVec::zeros(4 * n * n),
+            grid: Grid::new(2 * n, 2 * n),
         }
     }
 
-    fn rand_index<R: RngCore>(rng: &mut R, n: usize) -> Self::Index {
-        Uniform::new(0, 4 * n * n).sample(rng)
-    }
+    fn new_mask<R: RngCore>(rng: &mut R, n: usize) -> (Grid, Self::Index) {
+        let mut mask = Grid::new(2 * n, 2 * n);
+        // pick a point to censor in the first quadrant of the grid
+        let col = Uniform::from(0..n).sample(rng);
+        let row = Uniform::from(0..n).sample(rng);
+        mask.set(row, col, true);
 
-    fn new_mask<R: RngCore>(rng: &mut R, n: usize) -> (Self::Mask, Self::Index) {
-        let (w, h, wh) = (2 * n, 2 * n, 4 * n * n);
-        let mut mask = BitVec::zeros(wh);
-        // pick our special censored point in first half of the first row
-        let col = Uniform::from(0..w / 2).sample(rng);
-        mask.set(coord_to_ind(0, col, h), true);
+        // Censor n more points in that specific row and column, so not enough
+        // erasure encoded data is directly available
+        for k in n..2 * n {
+            mask.set(row, k, true);
+            mask.set(k, col, true);
+        }
 
-        // Censor an additional WIDTH/2 points from end of the grid
-        for j in (w / 2)..w {
-            mask.set(coord_to_ind(0, j, h), true);
-            // and for each of those points, censor HEIGHT/2 points from that column
-            for i in (h / 2)..h {
-                mask.set(coord_to_ind(i, j, h), true);
+        // Then censor the n x n block in the last quadrant of the grid
+        for i in n..2 * n {
+            for j in n..2 * n {
+                mask.set(i, j, true);
             }
         }
-        assert!(mask.count_ones() > (w / 2) * (h / 2));
+        // Check we censor
+        // 1. The n x n block
+        // 2. The point itself
+        // 3. The n points in the points' row/column
+        assert!(mask.count_ones() == n * n + 2 * n + 1);
 
-        (mask.not(), coord_to_ind(0, col, h))
+        (mask.not(), (row, col))
     }
 
-    fn can_reconstruct(&self, i: Self::Index) -> bool {
+    fn can_reconstruct(&self, (i, j): Self::Index) -> bool {
         // Is the cell present?
-        if self.grid.get_unchecked(i) {
+        if self.grid.get(i, j) {
             return true;
         }
         let mut rgrid = self.grid.clone();
         // Try to reconstruct repeatedly until the grid stops changing
         let mut changed = true;
-        let mut i = 0;
         while changed {
-            i += 1;
-            changed = reconstruct(&mut rgrid, self.w(), self.h());
+            changed = reconstruct(&mut rgrid);
         }
-        return rgrid.get_unchecked(i);
+        return rgrid.get(i, j);
     }
 
     #[inline(always)]
     fn sample<R: RngCore>(&mut self, rng: &mut R, amount: usize) {
-        let ufm = Uniform::new(0, self.wh());
-        for _ in 0..amount {
-            self.grid.set(ufm.sample(rng), true)
-        }
+        self.grid.sample(rng, amount, &SampleStrategy::RandomPoints);
     }
 
     #[inline(always)]
-    fn sample_exclusion<R: RngCore>(&mut self, rng: &mut R, amount: usize, mask: &Self::Mask) {
+    fn sample_exclusion<R: RngCore>(&mut self, rng: &mut R, amount: usize, mask: &Grid) {
         self.sample(rng, amount);
         self.grid.and_inplace(&mask)
     }
@@ -178,8 +141,7 @@ impl Reconstructable for Grid2dErasure {
     }
 
     fn grid_size(&self) -> usize {
-        // Average of width and height
-        (self.h() + self.h()) / 2
+        self.n
     }
 }
 
@@ -188,13 +150,8 @@ mod test {
     use super::*;
 
     fn from_bool_grid(bools: [[bool; 4]; 4]) -> Grid2dErasure {
-        let mut bv = BitVec::zeros(4 * 4);
-        for i in 0..4 {
-            for j in 0..4 {
-                bv.set(coord_to_ind(i, j, 4), bools[i][j]);
-            }
-        }
-        Grid2dErasure::from_bitvec(bv, 2).unwrap()
+        let grid = Grid::from_bool_grid(bools);
+        Grid2dErasure::from_grid(grid, 2).unwrap()
     }
 
     // Example of reconstruction with less than (W/2 + 1) * (H/2 + 1) points
@@ -206,8 +163,7 @@ mod test {
             [false, false, false, false],
             [false, false, false, true],
         ]);
-        let (w, h) = (g1.w(), g1.h());
-        reconstruct(&mut g1.grid, w, h);
+        reconstruct(&mut g1.grid);
         let g2 = from_bool_grid([
             [true, true, true, true],
             [false, false, true, false],
@@ -215,7 +171,7 @@ mod test {
             [false, false, false, true],
         ]);
         assert_eq!(g1, g2);
-        reconstruct(&mut g1.grid, w, h);
+        reconstruct(&mut g1.grid);
         let g3 = from_bool_grid([
             [true, true, true, true],
             [false, false, true, true],
@@ -233,14 +189,14 @@ mod test {
             [false, true, false, false],
             [true, true, true, true],
         ]);
-        println!("g1: {}", g1);
+        println!("g1: {:?}", g1);
         let g2 = from_bool_grid([
             [true, true, true, false],
             [false, true, false, true],
             [false, false, true, false],
             [true, true, false, false],
         ]);
-        println!("g2: {}", g2);
+        println!("g2: {:?}", g2);
         let res_cmp = from_bool_grid([
             [true, true, true, false],
             [false, true, true, true],
@@ -248,8 +204,8 @@ mod test {
             [true, true, true, true],
         ]);
         let res = g1.merge(g2);
-        println!("es: {}", res);
-        println!("cm: {}", res_cmp);
+        println!("es: {:?}", res);
+        println!("cm: {:?}", res_cmp);
         assert_eq!(res, res_cmp);
     }
 }
