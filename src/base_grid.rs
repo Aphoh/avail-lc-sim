@@ -15,13 +15,14 @@ pub struct Grid {
 
 #[derive(Debug, Clone)]
 pub enum SampleStrategy {
-    /// Split the grid into row_split rows and column_split columns, then sample those
+    /// Split the grid into width x height chunks, then sample those
     Box {
         /// How wide each chunk is. Must evenly divide the grid width.
         width: usize,
         /// same as `width` but for columns
         height: usize,
     },
+    /// Sample cells uniformly at random
     RandomPoints,
 }
 
