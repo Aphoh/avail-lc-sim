@@ -1,5 +1,5 @@
 use std::{
-    fmt::Debug,
+    fmt::{Debug, Display},
     ops::{BitOr, Not},
 };
 
@@ -23,6 +23,19 @@ pub enum SampleStrategy {
         height: usize,
     },
     RandomPoints,
+}
+
+impl Display for SampleStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SampleStrategy::Box { .. } => {
+                write!(f, "Box")
+            }
+            SampleStrategy::RandomPoints => {
+                write!(f, "RandomPoints")
+            }
+        }
+    }
 }
 
 impl Grid {

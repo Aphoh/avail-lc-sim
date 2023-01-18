@@ -1,7 +1,7 @@
-use traits::Reconstructable;
 use grid1d::Grid1dErasure;
 use grid2d::Grid2dErasure;
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
+use traits::Reconstructable;
 
 pub use base_grid::SampleStrategy;
 
@@ -69,17 +69,27 @@ impl ExperimentConfig {
             "n_clients",
             "percent_censored",
             "n_samples",
+            "strategy",
+            "box_width",
+            "box_height",
             "prob",
         ]
     }
 
     pub fn to_row(&self, prob: f32) -> Vec<String> {
+        let (box_width, box_height) = match self.sample_strategy {
+            SampleStrategy::Box { width, height } => (width, height),
+            SampleStrategy::RandomPoints => (1, 1),
+        };
         vec![
             self.dims.to_string(),
             self.n.to_string(),
             self.n_clients.to_string(),
             self.percent_censored.to_string(),
             self.n_samples.to_string(),
+            self.sample_strategy.to_string(),
+            box_width.to_string(),
+            box_height.to_string(),
             format!("{:.10}", prob),
         ]
     }

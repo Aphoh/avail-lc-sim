@@ -20,3 +20,6 @@ panic = "abort"
 
 [[example]]
 name = "small_grids"
+
+[[example]]
+name = "block_sampling"
