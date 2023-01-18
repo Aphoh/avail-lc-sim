@@ -1,6 +1,6 @@
 use rand::RngCore;
 
-use crate::base_grid::Grid;
+use crate::base_grid::{Grid, SampleStrategy};
 
 pub trait Reconstructable: Send + Sync {
     type Index: Clone + Send + Sync;
@@ -13,7 +13,7 @@ pub trait Reconstructable: Send + Sync {
     fn new(n: usize) -> Self;
     fn grid_size(&self) -> usize;
     fn can_reconstruct(&self, i: Self::Index) -> bool;
-    fn sample<R: RngCore>(&mut self, rng: &mut R, amount: usize);
-    fn sample_exclusion<R: RngCore>(&mut self, rng: &mut R, amount: usize, mask: &Grid);
+    fn sample<R: RngCore>(&mut self, rng: &mut R, amount: usize, strategy: &SampleStrategy);
+    fn sample_exclusion<R: RngCore>(&mut self, rng: &mut R, amount: usize, strategy: &SampleStrategy, mask: &Grid);
     fn merge(self, other: Self) -> Self;
 }

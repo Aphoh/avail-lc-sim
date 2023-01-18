@@ -13,11 +13,14 @@ pub struct Grid {
     h: usize,
 }
 
+#[derive(Debug, Clone)]
 pub enum SampleStrategy {
     /// Split the grid into row_split rows and column_split columns, then sample those
     Box {
-        row_split: usize,
-        column_split: usize,
+        /// How wide each chunk is. Must evenly divide the grid width.
+        width: usize,
+        /// same as `width` but for columns
+        height: usize,
     },
     RandomPoints,
 }
@@ -68,15 +71,34 @@ impl Grid {
     pub fn sample<R: RngCore>(&mut self, rng: &mut R, amount: usize, strategy: &SampleStrategy) {
         match strategy {
             SampleStrategy::Box {
-                row_split: _,
-                column_split: _,
+                width,  // width
+                height, // height
             } => {
-                unimplemented!()
+                let row_splits = self.w / width;
+                let col_splits = self.h / height;
+                let i_sampler = Uniform::new(0, col_splits);
+                let j_sampler = Uniform::new(0, row_splits);
+
+                for _ in 0..amount {
+                    // row major indexing b/c it's easy
+                    let box_i = i_sampler.sample(rng);
+                    let box_j = j_sampler.sample(rng);
+
+                    let start_i = box_i * height;
+                    let start_j = box_j * width;
+
+                    for i in start_i..start_i + height {
+                        for j in start_j..start_j + width {
+                            self.set(i, j, true);
+                        }
+                    }
+                }
             }
             SampleStrategy::RandomPoints => {
-                let ufw = Uniform::new(0, self.bv.len());
+                let rs = Uniform::new(0, self.h());
+                let cs = Uniform::new(0, self.w());
                 for _ in 0..amount {
-                    self.bv.set(ufw.sample(rng), true);
+                    self.set(rs.sample(rng), cs.sample(rng), true);
                 }
             }
         }
@@ -147,5 +169,26 @@ impl Debug for Grid {
             write!(f, "\n")?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::thread_rng;
+
+    use super::*;
+    #[test]
+    fn test_box_sampling() {
+        let mut g = Grid::new(32, 64);
+        g.sample(
+            &mut thread_rng(),
+            1,
+            &SampleStrategy::Box {
+                width: 16,
+                height: 8,
+            },
+        );
+        println!("{:?}", g);
+        assert_eq!(g.count_ones(), 16 * 8);
     }
 }

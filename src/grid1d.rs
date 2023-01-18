@@ -66,13 +66,19 @@ impl Reconstructable for Grid1dErasure {
     }
 
     #[inline(always)]
-    fn sample<R: RngCore>(&mut self, rng: &mut R, amount: usize) {
-        self.grid.sample(rng, amount, &SampleStrategy::RandomPoints)
+    fn sample<R: RngCore>(&mut self, rng: &mut R, amount: usize, sample_strategy: &SampleStrategy) {
+        self.grid.sample(rng, amount, sample_strategy)
     }
 
     #[inline(always)]
-    fn sample_exclusion<R: RngCore>(&mut self, rng: &mut R, amount: usize, mask: &Grid) {
-        self.sample(rng, amount);
+    fn sample_exclusion<R: RngCore>(
+        &mut self,
+        rng: &mut R,
+        amount: usize,
+        sample_strategy: &SampleStrategy,
+        mask: &Grid,
+    ) {
+        self.sample(rng, amount, sample_strategy);
         self.grid.and_inplace(&mask)
     }
 

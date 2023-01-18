@@ -17,3 +17,6 @@ indicatif = { version = "0.17", features = ["rayon"] }
 opt-level = 3
 lto = true
 panic = "abort"
+
+[[example]]
+name = "small_grids"
